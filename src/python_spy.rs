@@ -197,18 +197,19 @@ impl PythonSpy {
 
     // implementation of get_stack_traces, where we have a type for the InterpreterState
     fn _get_stack_traces<I: InterpreterState>(&mut self) -> Result<Vec<StackTrace>, Error> {
-        // Query the OS to get if each thread in the process is running or not
         let mut thread_activity = HashMap::new();
-        for thread in self.process.threads()?.iter() {
-            let threadid: Tid = thread.id()?;
-            thread_activity.insert(threadid, thread.active()?);
-        }
 
-        // Lock the process if appropriate. Note we have to lock AFTER getting the thread
-        // activity status from the OS (otherwise each thread would report being inactive always).
-        // This has the potential for race conditions (in that the thread activity could change
-        // between getting the status and locking the thread, but seems unavoidable right now
+        // Lock the process if appropiate
         let _lock = if self.config.blocking == LockingStrategy::Lock {
+            // Note we have to lock AFTER getting the thread activity status from the OS (otherwise
+            // each thread would report being inactive always). This has the potential for race
+            // conditions (in that the thread activity could change between getting the status and
+            // locking the thread, but seems unavoidable right now.
+            // Query the OS to get if each thread in the process is running or not
+            for thread in self.process.threads()?.iter() {
+                let threadid: Tid = thread.id()?;
+                thread_activity.insert(threadid, thread.active()?);
+            }
             Some(self.process.lock().context("Failed to suspend process")?)
         } else {
             None
