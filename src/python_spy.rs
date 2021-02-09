@@ -211,12 +211,16 @@ impl PythonSpy {
         let mut traces = Vec::new();
         let mut threads = interp.head();
         while !threads.is_null() {
-            // Get the stack trace of the python thread
             let thread = self.process.copy_pointer(threads).context("Failed to copy PyThreadState")?;
-            let mut trace = get_stack_trace(&thread, &self.process, self.config.dump_locals > 0)?;
+            let python_thread_id = thread.thread_id();
+            let owns_gil = python_thread_id == gil_thread_id;
+
+            if self.config.gil_only && !owns_gil {
+                threads = thread.next();
+                continue;
+            }
 
             // Try getting the native thread id
-            let python_thread_id = thread.thread_id();
             let mut os_thread_id = self._get_os_thread_id(python_thread_id, &interp)?;
 
             // linux can see issues where pthread_ids get recycled for new OS threads,
@@ -230,9 +234,11 @@ impl PythonSpy {
                 }
             }
 
+            // Get the stack trace of the python thread
+            let mut trace = get_stack_trace(&thread, &self.process, self.config.dump_locals > 0)?;
             trace.os_thread_id = os_thread_id.map(|id| id as u64);
             trace.thread_name = self._get_python_thread_name(python_thread_id);
-            trace.owns_gil = trace.thread_id == gil_thread_id;
+            trace.owns_gil = owns_gil;
 
             // Figure out if the thread is sleeping from the OS if possible
             trace.active = true;
