@@ -245,9 +245,7 @@ fn record_samples(pid: remoteprocess::Pid, config: &Config) -> Result<(), Error>
                 continue;
             }
 
-            if config.gil_only && !trace.owns_gil {
-                continue;
-            }
+            assert!(trace.owns_gil || !config.gil_only);
 
             if config.include_thread_ids {
                 let threadid = trace.format_threadid();
