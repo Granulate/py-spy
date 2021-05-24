@@ -59,11 +59,11 @@ impl Flamegraph {
                     None => &frame.filename,
                 };
                 if self.show_linenumbers && frame.line != 0 {
-                    format!("{} ({}:{})", frame.name, filename, frame.line)
+                    format!("{} ({}:{})_[p]", frame.name, filename, frame.line)
                 } else if !filename.is_empty() {
-                    format!("{} ({})", frame.name, filename)
+                    format!("{} ({})_[p]", frame.name, filename)
                 } else {
-                    frame.name.clone()
+                    format!("{}_[p]", frame.name.clone())
                 }
             })
             .collect::<Vec<String>>()
