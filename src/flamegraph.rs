@@ -51,11 +51,11 @@ impl Flamegraph {
         let frame = trace.frames.iter().rev().map(|frame| {
             let filename = match &frame.short_filename { Some(f) => &f, None => &frame.filename };
             if self.show_linenumbers && frame.line != 0 {
-                format!("{} ({}:{})", frame.name, filename, frame.line)
+                format!("{} ({}:{})_[p]", frame.name, filename, frame.line)
             } else if filename.len() > 0 {
-                format!("{} ({})", frame.name, filename)
+                format!("{} ({})_[p]", frame.name, filename)
             } else {
-                frame.name.clone()
+                format!("{}_[p]", frame.name.clone())
             }
         }).collect::<Vec<String>>().join(";");
         // update counts for that frame
