@@ -215,78 +215,79 @@ impl PythonSpy {
             let python_thread_id = thread.thread_id();
             let owns_gil = python_thread_id == gil_thread_id;
 
-            if self.config.gil_only && !owns_gil {
-                threads = thread.next();
-                continue;
-            }
+            if !self.config.gil_only || owns_gil {
+                // Try getting the native thread id
+                let mut os_thread_id = self._get_os_thread_id(python_thread_id, &interp)?;
 
-            // Try getting the native thread id
-            let mut os_thread_id = self._get_os_thread_id(python_thread_id, &interp)?;
-
-            // linux can see issues where pthread_ids get recycled for new OS threads,
-            // which totally breaks the caching we were doing here. Detect this and retry
-            if let Some(tid) = os_thread_id {
-                if thread_activity.len() > 0 && !thread_activity.contains_key(&tid) {
-                    info!("clearing away thread id caches, thread {} has exitted", tid);
-                    self.python_thread_ids.clear();
-                    self.python_thread_names.clear();
-                    os_thread_id = self._get_os_thread_id(python_thread_id, &interp)?;
-                }
-            }
-
-            // Get the stack trace of the python thread
-            let mut trace = get_stack_trace(&thread, &self.process, self.config.dump_locals > 0)?;
-            trace.os_thread_id = os_thread_id.map(|id| id as u64);
-            trace.thread_name = self._get_python_thread_name(python_thread_id);
-            trace.owns_gil = owns_gil;
-
-            // Figure out if the thread is sleeping from the OS if possible
-            trace.active = true;
-            if let Some(id) = os_thread_id {
-                if let Some(active) = thread_activity.get(&id) {
-                    trace.active = *active;
-                }
-            }
-
-            // fallback to using a heuristic if we think the thread is still active
-            // Note that on linux the  OS thread activity can only be gotten on x86_64
-            // processors and even then seems to be wrong occasionally in thinking 'select'
-            // calls are active (which seems related to the thread locking code,
-            // this problem doesn't seem to happen with the --nonblocking option)
-            // Note: this should be done before the native merging for correct results
-            if trace.active {
-                trace.active = !self._heuristic_is_thread_idle(&trace);
-            }
-
-            // Merge in the native stack frames if necessary
-            #[cfg(unwind)]
-            {
-                if self.config.native {
-                    if let Some(native) = self.native.as_mut() {
-                        let thread_id = os_thread_id.ok_or_else(|| format_err!("failed to get os threadid"))?;
-                        let os_thread = remoteprocess::Thread::new(thread_id)?;
-                        trace.frames = native.merge_native_thread(&trace.frames, &os_thread)?
+                // linux can see issues where pthread_ids get recycled for new OS threads,
+                // which totally breaks the caching we were doing here. Detect this and retry
+                if let Some(tid) = os_thread_id {
+                    if thread_activity.len() > 0 && !thread_activity.contains_key(&tid) {
+                        info!("clearing away thread id caches, thread {} has exitted", tid);
+                        self.python_thread_ids.clear();
+                        self.python_thread_names.clear();
+                        os_thread_id = self._get_os_thread_id(python_thread_id, &interp)?;
                     }
                 }
-            }
 
-            for frame in &mut trace.frames {
-                frame.short_filename = self.shorten_filename(&frame.filename);
-                if let Some(locals) = frame.locals.as_mut() {
-                    use crate::python_data_access::format_variable;
-                    let max_length = (128 * self.config.dump_locals) as isize;
-                    for local in locals {
-                        let repr = format_variable::<I>(&self.process, &self.version, local.addr, max_length);
-                        local.repr = Some(repr.unwrap_or("?".to_owned()));
+                // Get the stack trace of the python thread
+                let mut trace = get_stack_trace(&thread, &self.process, self.config.dump_locals > 0)?;
+                trace.os_thread_id = os_thread_id.map(|id| id as u64);
+                trace.thread_name = self._get_python_thread_name(python_thread_id);
+                trace.owns_gil = owns_gil;
+
+                // Figure out if the thread is sleeping from the OS if possible
+                trace.active = true;
+                if let Some(id) = os_thread_id {
+                    if let Some(active) = thread_activity.get(&id) {
+                        trace.active = *active;
                     }
+                }
+
+                // fallback to using a heuristic if we think the thread is still active
+                // Note that on linux the  OS thread activity can only be gotten on x86_64
+                // processors and even then seems to be wrong occasionally in thinking 'select'
+                // calls are active (which seems related to the thread locking code,
+                // this problem doesn't seem to happen with the --nonblocking option)
+                // Note: this should be done before the native merging for correct results
+                if trace.active {
+                    trace.active = !self._heuristic_is_thread_idle(&trace);
+                }
+
+                // Merge in the native stack frames if necessary
+                #[cfg(unwind)]
+                {
+                    if self.config.native {
+                        if let Some(native) = self.native.as_mut() {
+                            let thread_id = os_thread_id.ok_or_else(|| format_err!("failed to get os threadid"))?;
+                            let os_thread = remoteprocess::Thread::new(thread_id)?;
+                            trace.frames = native.merge_native_thread(&trace.frames, &os_thread)?
+                        }
+                    }
+                }
+
+                for frame in &mut trace.frames {
+                    frame.short_filename = self.shorten_filename(&frame.filename);
+                    if let Some(locals) = frame.locals.as_mut() {
+                        use crate::python_data_access::format_variable;
+                        let max_length = (128 * self.config.dump_locals) as isize;
+                        for local in locals {
+                            let repr = format_variable::<I>(&self.process, &self.version, local.addr, max_length);
+                            local.repr = Some(repr.unwrap_or("?".to_owned()));
+                        }
+                    }
+                }
+
+                traces.push(trace);
+
+                // This seems to happen occasionally when scanning BSS addresses for valid interpeters
+                if traces.len() > 4096 {
+                    return Err(format_err!("Max thread recursion depth reached"));
                 }
             }
 
-            traces.push(trace);
-
-            // This seems to happen occasionally when scanning BSS addresses for valid interpeters
-            if traces.len() > 4096 {
-                return Err(format_err!("Max thread recursion depth reached"));
+            if thread.next() == threads {
+                return Err(format_err!("Thread state points to itself!"));
             }
 
             threads = thread.next();
