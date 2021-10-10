@@ -222,7 +222,17 @@ impl PythonSpy {
 
         let mut traces = Vec::new();
         let mut threads = interp.head();
+        let mut idx = 0;
         while !threads.is_null() {
+            // place some limit on threads count; see 2nd "return Err()" site down below - we don't necessarily
+            // reach there due to the "continue" we added after checking the GIL.
+            // 16384 is an arbitrary number, not too high, not too low, for the "maximum" number of threads
+            // (py-spy's original 4096 is a bit too low IMO)
+            if idx > 16384 {
+                return Err(format_err!("Max thread recursion depth reached"));
+            }
+            idx += 1;
+
             let thread = self.process.copy_pointer(threads).context("Failed to copy PyThreadState")?;
 
             // Try getting the native thread id
