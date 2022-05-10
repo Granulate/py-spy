@@ -109,6 +109,7 @@ def extract_bindings(cpython_path, version, configure=False):
 
         cat Include/Python.h > bindgen_input.h
         cat Include/frameobject.h >> bindgen_input.h
+        cat Include/funcobject.h >> bindgen_input.h
         cat Objects/dict-common.h >> bindgen_input.h
         echo '#define Py_BUILD_CORE 1\n' >> bindgen_input.h
         #TODO: whyyyy
@@ -139,6 +140,7 @@ def extract_bindings(cpython_path, version, configure=False):
             --whitelist-type PyDictKeyEntry \
             --whitelist-type PyObject \
             --whitelist-type PyTypeObject \
+            --whitelist-type PyFunctionObject \
              -- -I . -I ./Include -I ./Include/internal
     """)
     if ret:
