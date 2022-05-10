@@ -1148,3 +1148,30 @@ impl Default for _is {
         unsafe { ::std::mem::zeroed() }
     }
 }
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct PyFunctionObject {
+    pub ob_base: PyObject,
+    pub func_code: *mut PyObject,
+    pub func_globals: *mut PyObject,
+    pub func_defaults: *mut PyObject,
+    pub func_kwdefaults: *mut PyObject,
+    pub func_closure: *mut PyObject,
+    pub func_doc: *mut PyObject,
+    pub func_name: *mut PyObject,
+    pub func_dict: *mut PyObject,
+    pub func_weakreflist: *mut PyObject,
+    pub func_module: *mut PyObject,
+    pub func_annotations: *mut PyObject,
+    pub func_qualname: *mut PyObject,
+    pub vectorcall: vectorcallfunc,
+}
+impl Default for PyFunctionObject {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
