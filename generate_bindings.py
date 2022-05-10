@@ -111,6 +111,8 @@ def extract_bindings(cpython_path, version, configure=False):
         cat Include/frameobject.h >> bindgen_input.h
         cat Objects/dict-common.h >> bindgen_input.h
         echo '#define Py_BUILD_CORE 1\n' >> bindgen_input.h
+        #TODO: whyyyy
+        echo '#undef HAVE_STD_ATOMIC\n' >> bindgen_input.h
         cat Include/internal/pycore_pystate.h >> bindgen_input.h
         cat Include/internal/pycore_interp.h >> bindgen_input.h
 
