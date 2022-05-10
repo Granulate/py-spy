@@ -35,10 +35,12 @@ pub trait ThreadState {
 
 pub trait FrameObject {
     type CodeObject: CodeObject;
+    type Object: Object;
 
     fn code(&self) -> * mut Self::CodeObject;
     fn lasti(&self) -> i32;
     fn back(&self) -> * mut Self;
+    fn value_stack(&self) -> * mut * mut Self::Object;
 }
 
 pub trait CodeObject {
@@ -121,10 +123,11 @@ macro_rules! PythonCommonImpl {
 
         impl FrameObject for $py::PyFrameObject {
             type CodeObject = $py::PyCodeObject;
-
+            type Object = $py::PyObject;
             fn code(&self) -> * mut Self::CodeObject { self.f_code }
             fn lasti(&self) -> i32 { self.f_lasti }
             fn back(&self) -> * mut Self { self.f_back }
+            fn value_stack(&self) -> * mut * mut Self::Object { self.f_valuestack }
         }
 
         impl Object for $py::PyObject {
