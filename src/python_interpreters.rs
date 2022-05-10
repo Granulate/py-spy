@@ -93,6 +93,13 @@ pub trait TypeObject {
     fn flags(&self) -> usize;
 }
 
+pub trait FunctionObject {
+    type Object: Object;
+
+    fn code(&self) -> * mut Self::Object;
+    fn module(&self) -> * mut Self::Object;
+}
+
 fn offset_of<T, M>(object: *const T, member: *const M) -> usize {
     member as usize - object as usize
 }
@@ -139,6 +146,12 @@ macro_rules! PythonCommonImpl {
             fn name(&self) -> *const ::std::os::raw::c_char { self.tp_name }
             fn dictoffset(&self) -> isize { self.tp_dictoffset }
             fn flags(&self) -> usize { self.tp_flags as usize }
+        }
+
+        impl FunctionObject for $py::PyFunctionObject {
+            type Object = $py::PyObject;
+            fn code(&self) -> * mut Self::Object { self.func_code }
+            fn module(&self) -> * mut Self::Object { self.func_module }
         }
     )
 }
