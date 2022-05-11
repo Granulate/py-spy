@@ -36,6 +36,7 @@ pub trait ThreadState {
 pub trait FrameObject {
     type CodeObject: CodeObject;
     type Object: Object;
+    type FunctionObject: FunctionObject;
 
     fn code(&self) -> * mut Self::CodeObject;
     fn lasti(&self) -> i32;
@@ -95,9 +96,11 @@ pub trait TypeObject {
 
 pub trait FunctionObject {
     type Object: Object;
+    type StringObject: StringObject;
 
     fn code(&self) -> * mut Self::Object;
     fn module(&self) -> * mut Self::Object;
+    fn name(&self) -> * mut Self::Object;
 }
 
 fn offset_of<T, M>(object: *const T, member: *const M) -> usize {
@@ -131,6 +134,7 @@ macro_rules! PythonCommonImpl {
         impl FrameObject for $py::PyFrameObject {
             type CodeObject = $py::PyCodeObject;
             type Object = $py::PyObject;
+            type FunctionObject = $py::PyFunctionObject;
             fn code(&self) -> * mut Self::CodeObject { self.f_code }
             fn lasti(&self) -> i32 { self.f_lasti }
             fn back(&self) -> * mut Self { self.f_back }
@@ -150,8 +154,10 @@ macro_rules! PythonCommonImpl {
 
         impl FunctionObject for $py::PyFunctionObject {
             type Object = $py::PyObject;
+            type StringObject = $py::$stringobject;
             fn code(&self) -> * mut Self::Object { self.func_code }
             fn module(&self) -> * mut Self::Object { self.func_module }
+            fn name(&self) -> * mut Self::Object { self.func_name }
         }
     )
 }

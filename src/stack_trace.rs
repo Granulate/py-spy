@@ -1,12 +1,11 @@
 use std;
 use std::sync::Arc;
-
 use failure::{Error, ResultExt};
 
 use remoteprocess::{ProcessMemory, Pid, Process};
 use serde_derive::Serialize;
 
-use crate::python_interpreters::{InterpreterState, ThreadState, FrameObject, CodeObject, TupleObject};
+use crate::python_interpreters::{InterpreterState, ThreadState, FrameObject, CodeObject, TupleObject, FunctionObject, Object, TypeObject};
 use crate::python_data_access::{copy_string, copy_bytes};
 use crate::config::LineNo;
 
@@ -85,11 +84,36 @@ pub fn get_stack_traces<I>(interpreter: &I, process: &Process, lineno: LineNo) -
 pub fn get_stack_trace<T>(thread: &T, process: &Process, copy_locals: bool, lineno: LineNo) -> Result<StackTrace, Error>
         where T: ThreadState {
     // TODO: just return frames here? everything else probably should be returned out of scope
-    let mut frames = Vec::new();
+    let mut frames: Vec<Frame> = Vec::new();
     let mut frame_ptr = thread.frame();
+    let mut last_code_option = None;
     while !frame_ptr.is_null() {
         let frame = process.copy_pointer(frame_ptr).context("Failed to copy PyFrameObject")?;
         let code = process.copy_pointer(frame.code()).context("Failed to copy PyCodeObject")?;
+
+        // let module = None;
+        let mut module = Some("<got code>".to_string());
+        let first_item_ptr = process.copy_pointer(frame.value_stack()).context("Failed to copy pointer to first value stack item")?;
+        if first_item_ptr as usize != 0 {
+            let first_item = process.copy_pointer(first_item_ptr).context("Failed to copy the first stack item")?;
+            let first_item_type = process.copy_pointer(first_item.ob_type())?;
+            // get the typename (truncating to 128 bytes if longer)
+            let max_type_len = 128;
+            let first_item_type_name = process.copy(first_item_type.name() as usize, max_type_len)?;
+            let length = first_item_type_name.iter().position(|&x| x == 0).unwrap_or(max_type_len);
+            let first_item_type_name = std::str::from_utf8(&first_item_type_name[..length])?;
+            module = Some(format!("<got valuestack {}>", first_item_type_name));
+            if first_item_type_name == "function" {
+                let func = process.copy_pointer(first_item_ptr as * mut <<T as ThreadState>::FrameObject as FrameObject>::FunctionObject).context("Failed to copy the first stack item")?;
+                let name = copy_string(func.name() as *mut <<<T as ThreadState>::FrameObject as FrameObject>::FunctionObject as FunctionObject>::StringObject, process).context("Failed to copy the function's name")?;
+                module = Some(format!("<wrong function {}>", name));
+                if let Some(last_code) = last_code_option {
+                    if func.code() as usize == last_code as usize {
+                        module = Some(copy_string(func.module() as *mut <<<T as ThreadState>::FrameObject as FrameObject>::FunctionObject as FunctionObject>::StringObject, process).context("Failed to copy the function's module")?);
+                    }
+                }
+            }
+        }
 
         let filename = copy_string(code.filename(), process).context("Failed to copy filename")?;
         let name = copy_string(code.name(), process).context("Failed to copy function name")?;
@@ -116,12 +140,16 @@ pub fn get_stack_trace<T>(thread: &T, process: &Process, copy_locals: bool, line
             None
         };
 
+        if let Some(last) = frames.last_mut() {
+            last.module = module;
+        }
         frames.push(Frame{name, filename, line, short_filename: None, module: None, locals});
         if frames.len() > 4096 {
             return Err(format_err!("Max frame recursion depth reached"));
         }
 
         frame_ptr = frame.back();
+        last_code_option = Some(frame.code());
     }
 
     Ok(StackTrace{pid: process.pid, frames, thread_id: thread.thread_id(), thread_name: None, owns_gil: false, active: true, os_thread_id: None, process_info: None})
