@@ -92,26 +92,35 @@ pub fn get_stack_trace<T>(thread: &T, process: &Process, copy_locals: bool, line
         let code = process.copy_pointer(frame.code()).context("Failed to copy PyCodeObject")?;
 
         // let module = None;
-        let mut module = Some("<got code>".to_string());
-        let first_item_ptr = process.copy_pointer(frame.value_stack()).context("Failed to copy pointer to first value stack item")?;
-        if first_item_ptr as usize != 0 {
-            let first_item = process.copy_pointer(first_item_ptr).context("Failed to copy the first stack item")?;
-            let first_item_type = process.copy_pointer(first_item.ob_type())?;
+        let mut module = Some("<got code".to_string());
+        for i in 0..5 {
+            let pointer = (i * std::mem::size_of::<usize>() + frame.value_stack() as usize) as *const *const <<T as ThreadState>::FrameObject as FrameObject>::Object;
+            let stack_item_ptr = process.copy_pointer(pointer).context("Failed to copy pointer to first value stack item")?;
+            if stack_item_ptr as usize == 0 {
+                break;
+            }
+            let stack_item = process.copy_pointer(stack_item_ptr).context("Failed to copy a stack item")?;
+            let stack_item_type = process.copy_pointer(stack_item.ob_type())?;
             // get the typename (truncating to 128 bytes if longer)
             let max_type_len = 128;
-            let first_item_type_name = process.copy(first_item_type.name() as usize, max_type_len)?;
-            let length = first_item_type_name.iter().position(|&x| x == 0).unwrap_or(max_type_len);
-            let first_item_type_name = std::str::from_utf8(&first_item_type_name[..length])?;
-            module = Some(format!("<got valuestack {}>", first_item_type_name));
-            if first_item_type_name == "function" {
-                let func = process.copy_pointer(first_item_ptr as * mut <<T as ThreadState>::FrameObject as FrameObject>::FunctionObject).context("Failed to copy the first stack item")?;
-                let name = copy_string(func.name() as *mut <<<T as ThreadState>::FrameObject as FrameObject>::FunctionObject as FunctionObject>::StringObject, process).context("Failed to copy the function's name")?;
-                module = Some(format!("<wrong function {}>", name));
-                if let Some(last_code) = last_code_option {
-                    if func.code() as usize == last_code as usize {
-                        module = Some(copy_string(func.module() as *mut <<<T as ThreadState>::FrameObject as FrameObject>::FunctionObject as FunctionObject>::StringObject, process).context("Failed to copy the function's module")?);
+            let stack_item_type_name = process.copy(stack_item_type.name() as usize, max_type_len)?;
+            let length = stack_item_type_name.iter().position(|&x| x == 0).unwrap_or(max_type_len);
+            let stack_item_type_name = std::str::from_utf8(&stack_item_type_name[..length])?;
+            module = Some(format!("{} {}", module.unwrap(), stack_item_type_name));
+
+            match stack_item_type_name {
+                "function" => {
+                    let func = process.copy_pointer(stack_item_ptr as * mut <<T as ThreadState>::FrameObject as FrameObject>::FunctionObject).context("Failed to copy the first stack item")?;
+                    if let Some(last_code) = last_code_option {
+                        if func.code() as usize == last_code as usize {
+                            module = Some(copy_string(func.module() as *mut <<<T as ThreadState>::FrameObject as FrameObject>::FunctionObject as FunctionObject>::StringObject, process).context("Failed to copy the function's module")?);
+                            break;
+                        }
                     }
                 }
+                "builtin_function_or_method" => {
+                }
+                _ => {}
             }
         }
 
