@@ -42,6 +42,7 @@ pub trait FrameObject {
     fn lasti(&self) -> i32;
     fn back(&self) -> * mut Self;
     fn value_stack(&self) -> * mut * mut Self::Object;
+    fn globals(&self) -> * mut Self::Object;
 }
 
 pub trait CodeObject {
@@ -139,6 +140,7 @@ macro_rules! PythonCommonImpl {
             fn lasti(&self) -> i32 { self.f_lasti }
             fn back(&self) -> * mut Self { self.f_back }
             fn value_stack(&self) -> * mut * mut Self::Object { self.f_valuestack }
+            fn globals(&self) -> * mut Self::Object { self.f_globals }
         }
 
         impl Object for $py::PyObject {

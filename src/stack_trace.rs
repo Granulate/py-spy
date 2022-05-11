@@ -86,46 +86,57 @@ pub fn get_stack_trace<T>(thread: &T, process: &Process, copy_locals: bool, line
     // TODO: just return frames here? everything else probably should be returned out of scope
     let mut frames: Vec<Frame> = Vec::new();
     let mut frame_ptr = thread.frame();
-    let mut last_code_option = None;
+    let mut last_frame_option: Option<<T as ThreadState>::FrameObject> = None;
     while !frame_ptr.is_null() {
         let frame = process.copy_pointer(frame_ptr).context("Failed to copy PyFrameObject")?;
         let code = process.copy_pointer(frame.code()).context("Failed to copy PyCodeObject")?;
 
-        // let module = None;
-        let mut module = Some("<got code".to_string());
-        for i in 0..5 {
-            let pointer = (i * std::mem::size_of::<usize>() + frame.value_stack() as usize) as *const *const <<T as ThreadState>::FrameObject as FrameObject>::Object;
-            let stack_item_ptr = process.copy_pointer(pointer).context("Failed to copy pointer to first value stack item")?;
-            if stack_item_ptr as usize == 0 {
-                break;
-            }
-            let stack_item = process.copy_pointer(stack_item_ptr).context("Failed to copy a stack item")?;
-            let stack_item_type = process.copy_pointer(stack_item.ob_type())?;
-            // get the typename (truncating to 128 bytes if longer)
-            let max_type_len = 128;
-            let stack_item_type_name = process.copy(stack_item_type.name() as usize, max_type_len)?;
-            let length = stack_item_type_name.iter().position(|&x| x == 0).unwrap_or(max_type_len);
-            let stack_item_type_name = std::str::from_utf8(&stack_item_type_name[..length])?;
-            module = Some(format!("{} {}", module.unwrap(), stack_item_type_name));
-
-            match stack_item_type_name {
-                "function" => {
-                    let func = process.copy_pointer(stack_item_ptr as * mut <<T as ThreadState>::FrameObject as FrameObject>::FunctionObject).context("Failed to copy the first stack item")?;
-                    if let Some(last_code) = last_code_option {
-                        if func.code() as usize == last_code as usize {
-                            module = Some(copy_string(func.module() as *mut <<<T as ThreadState>::FrameObject as FrameObject>::FunctionObject as FunctionObject>::StringObject, process).context("Failed to copy the function's module")?);
-                            break;
-                        }
-                    }
-                }
-                "builtin_function_or_method" => {
-                }
-                _ => {}
-            }
-        }
-
         let filename = copy_string(code.filename(), process).context("Failed to copy filename")?;
         let name = copy_string(code.name(), process).context("Failed to copy function name")?;
+
+        let mut module = None;
+        if let Some(last_frame_info) = frames.last_mut() {
+            if last_frame_info.module.is_some() {
+                let last_module = last_frame_info.module.as_ref().cloned();
+            } else {
+                let last_module = Some("<".to_string());
+                for i in 0..10 {
+                    let pointer = (i * std::mem::size_of::<usize>() + frame.value_stack() as usize) as *const *const <<T as ThreadState>::FrameObject as FrameObject>::Object;
+                    let stack_item_ptr = process.copy_pointer(pointer).context("Failed to copy pointer to first value stack item")?;
+                    if stack_item_ptr as usize == 0 {
+                        break;
+                    }
+                    let stack_item = process.copy_pointer(stack_item_ptr).context("Failed to copy a stack item")?;
+                    let stack_item_type = process.copy_pointer(stack_item.ob_type())?;
+                    // get the typename (truncating to 128 bytes if longer)
+                    let max_type_len = 128;
+                    let stack_item_type_name = process.copy(stack_item_type.name() as usize, max_type_len)?;
+                    let length = stack_item_type_name.iter().position(|&x| x == 0).unwrap_or(max_type_len);
+                    let stack_item_type_name = std::str::from_utf8(&stack_item_type_name[..length])?;
+                    last_module = Some(format!("{} {}", last_module.unwrap(), stack_item_type_name));
+
+                    match stack_item_type_name {
+                        "function" => {
+                            let func = process.copy_pointer(stack_item_ptr as *mut <<T as ThreadState>::FrameObject as FrameObject>::FunctionObject).context("Failed to copy the first stack item")?;
+                            if let Some(last_frame) = &last_frame_option {
+                                if func.code() as usize == last_frame.code() as usize {
+                                    last_module = Some(copy_string(func.module() as *mut <<<T as ThreadState>::FrameObject as FrameObject>::FunctionObject as FunctionObject>::StringObject, process).context("Failed to copy the function's module")?);
+                                    break;
+                                }
+                            }
+                        }
+                        "generator" => {}
+                        _ => {}
+                    }
+                }
+                last_frame_info.module = last_module.as_ref().cloned();
+            }
+            if let Some(last_frame) = &last_frame_option {
+                if last_frame.globals() == frame.globals() {
+                    module = last_module;
+                }
+            }
+        }
 
         let line = match lineno {
             LineNo::NoLine => 0,
@@ -149,16 +160,13 @@ pub fn get_stack_trace<T>(thread: &T, process: &Process, copy_locals: bool, line
             None
         };
 
-        if let Some(last) = frames.last_mut() {
-            last.module = module;
-        }
-        frames.push(Frame{name, filename, line, short_filename: None, module: None, locals});
+        frames.push(Frame{name, filename, line, short_filename: None, module, locals});
         if frames.len() > 4096 {
             return Err(format_err!("Max frame recursion depth reached"));
         }
 
         frame_ptr = frame.back();
-        last_code_option = Some(frame.code());
+        last_frame_option = Some(frame);
     }
 
     Ok(StackTrace{pid: process.pid, frames, thread_id: thread.thread_id(), thread_name: None, owns_gil: false, active: true, os_thread_id: None, process_info: None})

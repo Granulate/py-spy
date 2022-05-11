@@ -51,9 +51,9 @@ impl Flamegraph {
         let frame = trace.frames.iter().rev().map(|frame| {
             let filename = match &frame.short_filename { Some(f) => &f, None => &frame.filename };
             if self.show_linenumbers && frame.line != 0 {
-                format!("{} ({}:{})_[p] {}", frame.name, filename, frame.line, frame.module.as_ref().unwrap_or(&"<nope>".to_string()))
+                format!("{} ({}:{})_[p] mod={}", frame.name, filename, frame.line, frame.module.as_ref().unwrap_or(&"<nope>".to_string()))
             } else if filename.len() > 0 {
-                format!("{} ({})_[p] {}", frame.name, filename, frame.module.as_ref().unwrap_or(&"<nope>".to_string()))
+                format!("{} ({})_[p] mod={}", frame.name, filename, frame.module.as_ref().unwrap_or(&"<nope>".to_string()))
             } else {
                 format!("{}_[p]", frame.name.clone())
             }
