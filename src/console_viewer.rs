@@ -103,7 +103,7 @@ impl ConsoleViewer {
             update_function_statistics(&mut self.stats.line_counts, trace, |frame| {
                 let filename = match &frame.short_filename { Some(f) => &f, None => &frame.filename };
                 if frame.line != 0 {
-                    format!("{} ({}:{}) gig", frame.name, filename, frame.line)
+                    format!("{} ({}:{}) mod={}", frame.name, filename, frame.line, frame.module.as_ref().unwrap_or(&"<nope>".to_string()))
                 } else {
                     format!("{} ({}) lol", frame.name, filename)
                 }
