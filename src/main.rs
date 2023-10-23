@@ -178,7 +178,11 @@ fn record_samples(pid: remoteprocess::Pid, config: &Config) -> Result<(), Error>
             // The spinner on windows doesn't look great: was replaced by a [?] character at least on
             // my system. Replace unicode spinners with just how many seconds have elapsed
             #[cfg(windows)]
-            progress.set_style(indicatif::ProgressStyle::default_spinner().template("[{elapsed}] {msg}"));
+            progress.set_style(
+                indicatif::ProgressStyle::default_spinner()
+                    .template("[{elapsed}] {msg}")
+                    .unwrap(),
+            );
             progress
         }
     };
