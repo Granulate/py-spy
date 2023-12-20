@@ -556,7 +556,7 @@ fn get_python_version(python_info: &PythonProcessInfo, process: &remoteprocess::
 
     // otherwise get version info from scanning BSS section for sys.version string
     if let Some(ref pb) = python_info.python_binary {
-        info!("Getting version from python binary BSS");
+        info!("Getting version from python binary BSS. addr: 0x{:x}, size: 0x{:x}", pb.bss_addr, pb.bss_size);
         let bss = process.copy(pb.bss_addr as usize,
                                pb.bss_size as usize)?;
         match Version::scan_bytes(&bss) {

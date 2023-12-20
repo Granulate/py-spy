@@ -91,7 +91,7 @@ pub fn parse_binary(_pid: remoteprocess::Pid, filename: &Path, addr: u64, size: 
         Object::Elf(elf) => {
             let bss_header = elf.section_headers
                 .iter()
-                .find(|ref header| header.sh_type == goblin::elf::section_header::SHT_NOBITS)
+                .find(|ref header| header.sh_type == goblin::elf::section_header::SHT_NOBITS && elf.shdr_strtab.get_at(header.sh_name).unwrap_or("") == ".bss")
                 .ok_or_else(|| format_err!("Failed to find BSS section header in {}", filename.display()))?;
 
             let program_header = elf.program_headers
